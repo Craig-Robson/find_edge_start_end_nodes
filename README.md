@@ -1,4 +1,4 @@
-# find_edge_start_end_nodes
+# find nodes closest to the start and end of an edge
 Find the nodes closest to the start and end of edges.
 
 Using postgis functions within the PostgeSQL database finds for a set of edges the closest nodes to either end of an edge for a given set of nodes.
