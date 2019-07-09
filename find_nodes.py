@@ -7,7 +7,7 @@ def database_connection(db_params):
     Establish database connection to postgres
     """
 
-    connection = psycopg2.connect("dbname=%s user=%s port=%s host=%s password=%s" (db_params['database_name'], db_params['user'], db_params['port'], db_params['host'], db_params['password']))
+    connection = psycopg2.connect("dbname=%s user=%s port=%s host=%s password=%s" %(db_params['database_name'], db_params['user'], db_params['port'], db_params['host'], db_params['password']))
 
     return connection
 
@@ -31,22 +31,22 @@ def main(edges, nodes, edge_id_field='gid', node_id_field='gid', connection=None
 
     # get edge features
     # if database connection passed, get data from database, if not
-    # presume passed data is geojson
+    # I need a method to handle it
 
     # find the geometry column for the edges
-    cursor.exeute(sql.SQL('SELECT f_geometry_column FROM geometry_columns WHERE f_table_name = {};').format(sql.Identifier(edges)))
+    cursor.execute(sql.SQL('SELECT f_geometry_column FROM geometry_columns WHERE f_table_name = %s;'), [edges])
 
     edge_geom_field = cursor.fetchone()[0]
 
     # get edges from database
-    cursor.execut(sql.SQL('SELECT {}, ST_GeomAsText(ST_StartPoint({})) as start_node, ST_GeomAsText(ST_EndPoint({})) as end_node FROM {}').format(sql.Identifier(edge_id_field), sql.Identifier(edge_geom_field), sql.Identifier(edge_geom_field), sql.Identifier(edges)))
+    cursor.execute(sql.SQL('SELECT {}, ST_AsEWKT(ST_StartPoint(ST_SetSRID({},27700))) as start_node, ST_AsEWKT(ST_EndPoint(ST_SetSRID({}, 27700))) as end_node FROM {}').format(sql.Identifier(edge_id_field), sql.Identifier(edge_geom_field), sql.Identifier(edge_geom_field), sql.Identifier(edges)))
 
     edge_features = cursor.fetchall()
 
     # calculate the to and from nodes for the edges
 
     # find the geometry column for the nodes
-    cursor.exeute(sql.SQL('SELECT f_geometry_column FROM geometry_columns WHERE f_table_name = {};').format(sql.Identifier(nodes)))
+    cursor.execute(sql.SQL('SELECT f_geometry_column FROM geometry_columns WHERE f_table_name = %s;'), [nodes])
 
     node_geom_field = cursor.fetchone()[0]
 
@@ -54,12 +54,12 @@ def main(edges, nodes, edge_id_field='gid', node_id_field='gid', connection=None
     for feat in edge_features:
 
         # run for start node
-        cursor.execute(sql.SQL('SELECT {} FROM {} ORDER BY {} <-> %s LIMIT 1;').format(sql.Identifier(node_id_field), sql.Identifier(nodes), sql.Identifier(node_geom_field)), [feat['start_node']])
+        cursor.execute(sql.SQL('SELECT {} FROM {} ORDER BY ST_Transform({}, 27700) <-> %s LIMIT 1;').format(sql.Identifier(node_id_field), sql.Identifier(nodes), sql.Identifier(node_geom_field)), [feat[1]])
 
         start_node_id = cursor.fetchone()[0]
 
         # run for end node
-        cursor.execute(sql.SQL('SELECT {} FROM {} ORDER BY {} <-> %s LIMIT 1;').format(sql.Identifier(node_id_field), sql.Identifier(nodes), sql.Identifier(node_geom_field)), [feat['end_node']])
+        cursor.execute(sql.SQL('SELECT {} FROM {} ORDER BY ST_Transform({}, 27700) <-> %s LIMIT 1;').format(sql.Identifier(node_id_field), sql.Identifier(nodes), sql.Identifier(node_geom_field)), [feat[2]])
 
         end_node_id = cursor.fetchone()[0]
 
@@ -69,6 +69,6 @@ def main(edges, nodes, edge_id_field='gid', node_id_field='gid', connection=None
             cursor.execute(sql.SQL('UPDATE {} SET from_id=%s, to_id=%s WHERE gid=%s;').format(sql.Identifier(edges)), [start_node_id, end_node_id, feat[edge_id_field]])
 
         # store the information for use when inserting data in to the graph database
-        edge_set[feat[edge_id_field]] = {'start_node':start_node_id, 'end_node':end_node_id}
+        edge_set[feat[0]] = {'start_node':start_node_id, 'end_node':end_node_id}
 
     return edge_set
