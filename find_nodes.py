@@ -69,7 +69,7 @@ def main(edges, nodes, edge_id_field='gid', node_id_field='gid', connection=None
     #
     cursor.execute(sql.SQL('UPDATE {} SET from_id = {}.node_id FROM {} WHERE {}.gid = {}.edge_id;').format(sql.SQL(edges), sql.SQL(temp_edge_start_nodes_nearest), sql.SQL(temp_edge_start_nodes_nearest), sql.SQL(edges), sql.SQL(temp_edge_start_nodes_nearest)))
 
-    cursor.execute(sql.SQL('UPDATE {} SET from_id = {}.node_id FROM {} WHERE {}.gid = {}.edge_id;').format(sql.SQL(edges), sql.SQL(temp_edge_end_nodes_nearest), sql.SQL(temp_edge_end_nodes_nearest), sql.SQL(edges), sql.SQL(temp_edge_end_nodes_nearest)))
+    cursor.execute(sql.SQL('UPDATE {} SET to_id = {}.node_id FROM {} WHERE {}.gid = {}.edge_id;').format(sql.SQL(edges), sql.SQL(temp_edge_end_nodes_nearest), sql.SQL(temp_edge_end_nodes_nearest), sql.SQL(edges), sql.SQL(temp_edge_end_nodes_nearest)))
 
     cursor.execute(sql.SQL('DROP TABLE IF EXISTS {};').format(sql.SQL(temp_edge_start_nodes)))
     cursor.execute(sql.SQL('DROP TABLE IF EXISTS {};').format(sql.SQL(temp_edge_end_nodes)))
