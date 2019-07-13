@@ -9,6 +9,8 @@ def database_connection(db_params):
 
     connection = psycopg2.connect("dbname=%s user=%s port=%s host=%s password=%s" %(db_params['database_name'], db_params['user'], db_params['port'], db_params['host'], db_params['password']))
 
+    connection.autocommit = True
+
     return connection
 
 
@@ -38,37 +40,40 @@ def main(edges, nodes, edge_id_field='gid', node_id_field='gid', connection=None
 
     edge_geom_field = cursor.fetchone()[0]
 
-    # get edges from database
-    cursor.execute(sql.SQL('SELECT {}, ST_AsEWKT(ST_StartPoint(ST_SetSRID({},27700))) as start_node, ST_AsEWKT(ST_EndPoint(ST_SetSRID({}, 27700))) as end_node FROM {}').format(sql.Identifier(edge_id_field), sql.Identifier(edge_geom_field), sql.Identifier(edge_geom_field), sql.Identifier(edges)))
-
-    edge_features = cursor.fetchall()
-
-    # calculate the to and from nodes for the edges
-
     # find the geometry column for the nodes
     cursor.execute(sql.SQL('SELECT f_geometry_column FROM geometry_columns WHERE f_table_name = %s;'), [nodes])
 
     node_geom_field = cursor.fetchone()[0]
 
-    # loop through the edges returned from the database
-    for feat in edge_features:
+    temp_edge_start_nodes = 'temp_edge_start_nodes'
+    temp_edge_end_nodes = 'temp_edge_end_nodes'
 
-        # run for start node
-        cursor.execute(sql.SQL('SELECT {} FROM {} ORDER BY ST_Transform({}, 27700) <-> %s LIMIT 1;').format(sql.Identifier(node_id_field), sql.Identifier(nodes), sql.Identifier(node_geom_field)), [feat[1]])
+    # create temp tables with geom in - edge start nodes
+    cursor.execute(sql.SQL('SELECT gid, ST_StartPoint({}) as geom INTO {} FROM {} ;').format(sql.Identifier(edge_geom_field), sql.Identifier(temp_edge_start_nodes), sql.Identifier(edges)), [])
 
-        start_node_id = cursor.fetchone()[0]
+    # create temp tables with geom in - edge end nodes
+    cursor.execute(sql.SQL('SELECT gid, ST_EndPoint({}) as geom INTO {} FROM {} ;').format(sql.Identifier(edge_geom_field), sql.Identifier(temp_edge_end_nodes), sql.Identifier(edges)), [])
 
-        # run for end node
-        cursor.execute(sql.SQL('SELECT {} FROM {} ORDER BY ST_Transform({}, 27700) <-> %s LIMIT 1;').format(sql.Identifier(node_id_field), sql.Identifier(nodes), sql.Identifier(node_geom_field)), [feat[2]])
+    # add node id fields to the temp tables
+    cursor.execute(sql.SQL('ALTER TABLE {} ADD node_id integer;').format(sql.SQL(temp_edge_start_nodes)))
+    cursor.execute(sql.SQL('ALTER TABLE {} ADD node_id integer;').format(sql.SQL(temp_edge_end_nodes)))
 
-        end_node_id = cursor.fetchone()[0]
+    temp_edge_start_nodes_nearest = 'temp_edge_start_nodes_nearest'
+    temp_edge_end_nodes_nearest = 'temp_edge_end_nodes_nearest'
 
-        # update the edges with the to and from ids if set as True
-        if update_edges:
+    #
+    cursor.execute(sql.SQL('SELECT {}.gid as edge_id, (SELECT {}.gid as node_id FROM {} ORDER BY {}.geom <#> {}.geom LIMIT 1) INTO {} FROM  {};').format(sql.SQL(temp_edge_start_nodes), sql.SQL(nodes), sql.SQL(nodes), sql.SQL(temp_edge_start_nodes), sql.SQL(nodes), sql.SQL(temp_edge_start_nodes_nearest), sql.SQL(temp_edge_start_nodes)))
 
-            cursor.execute(sql.SQL('UPDATE {} SET from_id=%s, to_id=%s WHERE gid=%s;').format(sql.Identifier(edges)), [start_node_id, end_node_id, feat[edge_id_field]])
+    cursor.execute(sql.SQL('SELECT {}.gid as edge_id, (SELECT {}.gid as node_id FROM {} ORDER BY {}.geom <#> {}.geom LIMIT 1) INTO {} FROM  {};').format(sql.SQL(temp_edge_end_nodes), sql.SQL(nodes), sql.SQL(nodes), sql.SQL(temp_edge_end_nodes), sql.SQL(nodes), sql.SQL(temp_edge_end_nodes_nearest), sql.SQL(temp_edge_end_nodes)))
 
-        # store the information for use when inserting data in to the graph database
-        edge_set[feat[0]] = {'start_node':start_node_id, 'end_node':end_node_id}
+    #
+    cursor.execute(sql.SQL('UPDATE {} SET from_id = {}.node_id FROM {} WHERE {}.gid = {}.edge_id;').format(sql.SQL(edges), sql.SQL(temp_edge_start_nodes_nearest), sql.SQL(temp_edge_start_nodes_nearest), sql.SQL(edges), sql.SQL(temp_edge_start_nodes_nearest)))
+
+    cursor.execute(sql.SQL('UPDATE {} SET from_id = {}.node_id FROM {} WHERE {}.gid = {}.edge_id;').format(sql.SQL(edges), sql.SQL(temp_edge_end_nodes_nearest), sql.SQL(temp_edge_end_nodes_nearest), sql.SQL(edges), sql.SQL(temp_edge_end_nodes_nearest)))
+
+    cursor.execute(sql.SQL('DROP TABLE IF EXISTS {};').format(sql.SQL(temp_edge_start_nodes)))
+    cursor.execute(sql.SQL('DROP TABLE IF EXISTS {};').format(sql.SQL(temp_edge_end_nodes)))
+    cursor.execute(sql.SQL('DROP TABLE IF EXISTS {};').format(sql.SQL(temp_edge_start_nodes_nearest)))
+    cursor.execute(sql.SQL('DROP TABLE IF EXISTS {};').format(sql.SQL(temp_edge_end_nodes_nearest)))
 
     return edge_set
