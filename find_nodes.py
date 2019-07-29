@@ -29,6 +29,18 @@ def main(edges, nodes, edge_id_field='gid', node_id_field='gid', cursor=None, co
     if cursor is None:
         cursor = db_connection.cursor()
 
+    # set the names of the temp tables
+    temp_edge_start_nodes = 'temp_edge_start_nodes'
+    temp_edge_end_nodes = 'temp_edge_end_nodes'
+    temp_edge_start_nodes_nearest = 'temp_edge_start_nodes_nearest'
+    temp_edge_end_nodes_nearest = 'temp_edge_end_nodes_nearest'
+
+    # delete the temp tables if left over from a failed run previously
+    cursor.execute(sql.SQL('DROP TABLE IF EXISTS {};').format(sql.SQL(temp_edge_start_nodes)))
+    cursor.execute(sql.SQL('DROP TABLE IF EXISTS {};').format(sql.SQL(temp_edge_end_nodes)))
+    cursor.execute(sql.SQL('DROP TABLE IF EXISTS {};').format(sql.SQL(temp_edge_start_nodes_nearest)))
+    cursor.execute(sql.SQL('DROP TABLE IF EXISTS {};').format(sql.SQL(temp_edge_end_nodes_nearest)))
+
     # dictionary to store the edges and their closest nodes
     edge_set = {}
 
@@ -38,7 +50,7 @@ def main(edges, nodes, edge_id_field='gid', node_id_field='gid', cursor=None, co
 
     # find the geometry column for the edges
     cursor.execute(sql.SQL('SELECT f_geometry_column FROM geometry_columns WHERE f_table_name = %s;'), [edges])
-    
+
     edge_geom_field = cursor.fetchone()[0]
 
     # find the geometry column for the nodes
@@ -46,21 +58,15 @@ def main(edges, nodes, edge_id_field='gid', node_id_field='gid', cursor=None, co
 
     node_geom_field = cursor.fetchone()[0]
 
-    temp_edge_start_nodes = 'temp_edge_start_nodes'
-    temp_edge_end_nodes = 'temp_edge_end_nodes'
-
     # create temp tables with geom in - edge start nodes
-    cursor.execute(sql.SQL('SELECT gid, ST_StartPoint({}) as geom INTO {} FROM {} ;').format(sql.Identifier(edge_geom_field), sql.Identifier(temp_edge_start_nodes), sql.Identifier(edges)), [])
+    cursor.execute(sql.SQL('SELECT gid, ST_StartPoint(ST_LineMerge({})) as geom INTO {} FROM {} ;').format(sql.Identifier(edge_geom_field), sql.Identifier(temp_edge_start_nodes), sql.Identifier(edges)), [])
 
     # create temp tables with geom in - edge end nodes
-    cursor.execute(sql.SQL('SELECT gid, ST_EndPoint({}) as geom INTO {} FROM {} ;').format(sql.Identifier(edge_geom_field), sql.Identifier(temp_edge_end_nodes), sql.Identifier(edges)), [])
+    cursor.execute(sql.SQL('SELECT gid, ST_EndPoint(ST_LineMerge({})) as geom INTO {} FROM {} ;').format(sql.Identifier(edge_geom_field), sql.Identifier(temp_edge_end_nodes), sql.Identifier(edges)), [])
 
     # add node id fields to the temp tables
     cursor.execute(sql.SQL('ALTER TABLE {} ADD node_id integer;').format(sql.SQL(temp_edge_start_nodes)))
     cursor.execute(sql.SQL('ALTER TABLE {} ADD node_id integer;').format(sql.SQL(temp_edge_end_nodes)))
-
-    temp_edge_start_nodes_nearest = 'temp_edge_start_nodes_nearest'
-    temp_edge_end_nodes_nearest = 'temp_edge_end_nodes_nearest'
 
     #
     cursor.execute(sql.SQL('SELECT {}.gid as edge_id, (SELECT {}.gid as node_id FROM {} ORDER BY {}.geom <#> {}.geom LIMIT 1) INTO {} FROM  {};').format(sql.SQL(temp_edge_start_nodes), sql.SQL(nodes), sql.SQL(nodes), sql.SQL(temp_edge_start_nodes), sql.SQL(nodes), sql.SQL(temp_edge_start_nodes_nearest), sql.SQL(temp_edge_start_nodes)))
@@ -72,9 +78,11 @@ def main(edges, nodes, edge_id_field='gid', node_id_field='gid', cursor=None, co
 
     cursor.execute(sql.SQL('UPDATE {} SET to_id = {}.node_id FROM {} WHERE {}.gid = {}.edge_id;').format(sql.SQL(edges), sql.SQL(temp_edge_end_nodes_nearest), sql.SQL(temp_edge_end_nodes_nearest), sql.SQL(edges), sql.SQL(temp_edge_end_nodes_nearest)))
 
+    # delete the temp tables on completion of run
     cursor.execute(sql.SQL('DROP TABLE IF EXISTS {};').format(sql.SQL(temp_edge_start_nodes)))
     cursor.execute(sql.SQL('DROP TABLE IF EXISTS {};').format(sql.SQL(temp_edge_end_nodes)))
     cursor.execute(sql.SQL('DROP TABLE IF EXISTS {};').format(sql.SQL(temp_edge_start_nodes_nearest)))
     cursor.execute(sql.SQL('DROP TABLE IF EXISTS {};').format(sql.SQL(temp_edge_end_nodes_nearest)))
 
-    return edge_set
+
+    return
