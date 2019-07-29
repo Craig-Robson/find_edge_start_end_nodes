@@ -14,19 +14,20 @@ def database_connection(db_params):
     return connection
 
 
-def main(edges, nodes, edge_id_field='gid', node_id_field='gid', connection=None, connection_parameters=None, update_edges=False):
+def main(edges, nodes, edge_id_field='gid', node_id_field='gid', cursor=None, connection=None, connection_parameters=None, update_edges=False):
     """
     Calculate the closest node in a node dataset to the start and end of each edge in an edge dataset.
     """
 
-    if connection is None:
+    if connection is None and cursor is None:
         if connection_parameters is None:
             # return an error to the user
             return
         db_connection = database_connection(connection_parameters)
 
-    # creat cursor to access database
-    cursor = db_connection.cursor()
+    # create cursor to access database
+    if cursor is None:
+        cursor = db_connection.cursor()
 
     # dictionary to store the edges and their closest nodes
     edge_set = {}
@@ -37,7 +38,7 @@ def main(edges, nodes, edge_id_field='gid', node_id_field='gid', connection=None
 
     # find the geometry column for the edges
     cursor.execute(sql.SQL('SELECT f_geometry_column FROM geometry_columns WHERE f_table_name = %s;'), [edges])
-
+    
     edge_geom_field = cursor.fetchone()[0]
 
     # find the geometry column for the nodes
