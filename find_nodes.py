@@ -68,14 +68,20 @@ def main(edges, nodes, edge_id_field='gid', node_id_field='gid', cursor=None, co
     cursor.execute(sql.SQL('ALTER TABLE {} ADD node_id integer;').format(sql.SQL(temp_edge_start_nodes)))
     cursor.execute(sql.SQL('ALTER TABLE {} ADD node_id integer;').format(sql.SQL(temp_edge_end_nodes)))
 
-    #
+    # run spatial search for start nodes
     cursor.execute(sql.SQL('SELECT {}.gid as edge_id, (SELECT {}.gid as node_id FROM {} ORDER BY {}.geom <#> {}.geom LIMIT 1) INTO {} FROM  {};').format(sql.SQL(temp_edge_start_nodes), sql.SQL(nodes), sql.SQL(nodes), sql.SQL(temp_edge_start_nodes), sql.SQL(nodes), sql.SQL(temp_edge_start_nodes_nearest), sql.SQL(temp_edge_start_nodes)))
 
+    # run spatial search for end nodes
     cursor.execute(sql.SQL('SELECT {}.gid as edge_id, (SELECT {}.gid as node_id FROM {} ORDER BY {}.geom <#> {}.geom LIMIT 1) INTO {} FROM  {};').format(sql.SQL(temp_edge_end_nodes), sql.SQL(nodes), sql.SQL(nodes), sql.SQL(temp_edge_end_nodes), sql.SQL(nodes), sql.SQL(temp_edge_end_nodes_nearest), sql.SQL(temp_edge_end_nodes)))
 
-    #
+    # create node id columns in original edge table if they don't exist
+    cursor.execute(sql.SQL('ALTER TABLE {} ADD IF NOT EXISTS from_id integer;').format(sql.SQL(edges)))
+    cursor.execute(sql.SQL('ALTER TABLE {} ADD IF NOT EXISTS to_id integer;').format(sql.SQL(edges)))
+
+    # update node ids for start nodes
     cursor.execute(sql.SQL('UPDATE {} SET from_id = {}.node_id FROM {} WHERE {}.gid = {}.edge_id;').format(sql.SQL(edges), sql.SQL(temp_edge_start_nodes_nearest), sql.SQL(temp_edge_start_nodes_nearest), sql.SQL(edges), sql.SQL(temp_edge_start_nodes_nearest)))
 
+    # update nodes ides for end nodes
     cursor.execute(sql.SQL('UPDATE {} SET to_id = {}.node_id FROM {} WHERE {}.gid = {}.edge_id;').format(sql.SQL(edges), sql.SQL(temp_edge_end_nodes_nearest), sql.SQL(temp_edge_end_nodes_nearest), sql.SQL(edges), sql.SQL(temp_edge_end_nodes_nearest)))
 
     # delete the temp tables on completion of run
